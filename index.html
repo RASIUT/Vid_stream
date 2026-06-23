@@ -42,9 +42,22 @@ h1{
     transform:scale(1.03);
 }
 
-.card img{
+.thumbnail{
     width:100%;
     height:180px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:18px;
+    background:#2b2b2b;
+    color:#fff;
+    text-align:center;
+    font-size:18px;
+}
+
+.card img.thumbnail{
+    display:block;
+    padding:0;
     object-fit:cover;
 }
 
@@ -88,53 +101,111 @@ video{
 
 <h1>My Video Gallery</h1>
 
-<div class="gallery">
+<div class="gallery" id="gallery"></div>
 
-    <div class="card" onclick="playVideo('videos/video1.mp4')">
-        <img src="thumbnails/thumb1.jpg" alt="">
-        <div class="title">Video 1</div>
-    </div>
-
-    <div class="card" onclick="playVideo('videos/video2.mp4')">
-        <img src="thumbnails/thumb2.jpg" alt="">
-        <div class="title">Video 2</div>
-    </div>
-
-    <div class="card" onclick="playVideo('videos/video3.mp4')">
-        <img src="thumbnails/thumb3.jpg" alt="">
-        <div class="title">Video 3</div>
-    </div>
-
-    <div class="card" onclick="playVideo('videos/video4.mp4')">
-        <img src="thumbnails/thumb4.jpg" alt="">
-        <div class="title">Video 4</div>
-    </div>
-
-</div>
 
 <div class="modal" id="videoModal">
     <span class="close" onclick="closeVideo()">&times;</span>
 
     <div class="modal-content">
-        <video id="player" controls autoplay>
-            <source src="" type="video/mp4">
+        <video id="player" controls autoplay playsinline preload="metadata">
+            Your browser does not support the video tag.
         </video>
     </div>
 </div>
-
 <script>
+const archiveBaseUrl = "https://archive.org/download/gnai_20260622/";
+
+function archiveUrl(path){
+    return archiveBaseUrl + path.split("/").map(encodeURIComponent).join("/");
+}
+
+const videos = [
+    {
+        title: "Roadmap",
+        file: "roadmap.mp4",
+        thumbnail: "gnai_20260622.thumbs/roadmap_000081.jpg"
+    },
+    {
+        title: "Generative AI using LangChain",
+        file: "Generative AI using LangChain _ GENAI for Beginners _ CampusX_1080p.mp4",
+        thumbnail: "gnai_20260622.thumbs/Generative AI using LangChain _ GENAI for Beginners _ CampusX_1080p_000060.jpg"
+    },
+    {
+        title: "Video 1",
+        file: "video1.mp4",
+        thumbnail: "gnai_20260622.thumbs/video1_000061.jpg"
+    },
+    {
+        title: "Video 2",
+        file: "video2.mp4",
+        thumbnail: "gnai_20260622.thumbs/video2_000086.jpg"
+    },
+    {
+        title: "Video 3",
+        file: "video3.mp4",
+        thumbnail: "gnai_20260622.thumbs/video3_000165.jpg"
+    },
+    {
+        title: "Video 4",
+        file: "video4.mp4",
+        thumbnail: "gnai_20260622.thumbs/video4_000127.jpg"
+    },
+    {
+        title: "Video 5",
+        file: "video5.mp4",
+        thumbnail: "gnai_20260622.thumbs/video5_000110.jpg"
+    },
+    {
+        title: "Video 6",
+        file: "video6.mp4",
+        thumbnail: "gnai_20260622.thumbs/video6_000086.jpg"
+    }
+];
+
+const gallery = document.getElementById("gallery");
 const modal = document.getElementById("videoModal");
 const player = document.getElementById("player");
 
-function playVideo(videoSrc){
+videos.forEach(video => {
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const thumbnail = document.createElement("img");
+    thumbnail.className = "thumbnail";
+    thumbnail.src = archiveUrl(video.thumbnail);
+    thumbnail.alt = video.title;
+    thumbnail.onerror = () => {
+        const fallback = document.createElement("div");
+        fallback.className = "thumbnail";
+        fallback.textContent = video.title;
+        thumbnail.replaceWith(fallback);
+    };
+    card.appendChild(thumbnail);
+
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = video.title;
+    card.appendChild(title);
+
+    card.onclick = () => playVideo(archiveUrl(video.file), archiveUrl(video.thumbnail));
+
+    gallery.appendChild(card);
+});
+
+function playVideo(videoSrc, posterSrc){
+    player.poster = posterSrc;
     player.src = videoSrc;
     modal.style.display = "flex";
-    player.play();
+    player.load();
+    player.play().catch(() => {});
 }
 
 function closeVideo(){
     player.pause();
-    player.src = "";
+    player.removeAttribute("src");
+    player.removeAttribute("poster");
+    player.load();
     modal.style.display = "none";
 }
 

@@ -24,6 +24,12 @@ h1{
     margin-bottom:30px;
 }
 
+.status{
+    text-align:center;
+    margin:-10px 0 20px;
+    color:#cfcfcf;
+}
+
 .gallery{
     display:grid;
     grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
@@ -101,6 +107,8 @@ video{
 
 <h1>My Video Gallery</h1>
 
+<p class="status" id="status">Loading videos...</p>
+
 <div class="gallery" id="gallery"></div>
 
 
@@ -114,84 +122,157 @@ video{
     </div>
 </div>
 <script>
-const archiveBaseUrl = "https://archive.org/download/gnai_20260623/";
-    
+const archiveIdentifier = "gnai_20260623";
+const archiveBaseUrl = `https://archive.org/download/${archiveIdentifier}/`;
+const metadataUrl = `https://archive.org/metadata/${archiveIdentifier}`;
+
 function archiveUrl(path){
     return archiveBaseUrl + path.split("/").map(encodeURIComponent).join("/");
 }
 
-const videos = [
-    {
-        title: "Roadmap",
-        file: "roadmap.mp4",
-        thumbnail: "gnai_20260622.thumbs/roadmap_000081.jpg"
-    },
-    {
-        title: "Generative AI using LangChain",
-        file: "Generative AI using LangChain _ GENAI for Beginners _ CampusX_1080p.mp4",
-        thumbnail: "gnai_20260622.thumbs/Generative AI using LangChain _ GENAI for Beginners _ CampusX_1080p_000060.jpg"
-    },
-    {
-        title: "Video 1",
-        file: "video1.mp4",
-        thumbnail: "gnai_20260622.thumbs/video1_000061.jpg"
-    },
-    {
-        title: "Video 2",
-        file: "video2.mp4",
-        thumbnail: "gnai_20260622.thumbs/video2_000086.jpg"
-    },
-    {
-        title: "Video 3",
-        file: "video3.mp4",
-        thumbnail: "gnai_20260622.thumbs/video3_000165.jpg"
-    },
-    {
-        title: "Video 4",
-        file: "video4.mp4",
-        thumbnail: "gnai_20260622.thumbs/video4_000127.jpg"
-    },
-    {
-        title: "Video 5",
-        file: "video5.mp4",
-        thumbnail: "gnai_20260622.thumbs/video5_000110.jpg"
-    },
-    {
-        title: "Video 6",
-        file: "video6.mp4",
-        thumbnail: "gnai_20260622.thumbs/video6_000086.jpg"
-    }
-];
-
 const gallery = document.getElementById("gallery");
 const modal = document.getElementById("videoModal");
 const player = document.getElementById("player");
+const status = document.getElementById("status");
+const titleSorter = new Intl.Collator(undefined, {
+    numeric:true,
+    sensitivity:"base"
+});
 
-videos.forEach(video => {
+function isOriginalVideo(file){
+    return file.source === "original" && /\.mp4$/i.test(file.name);
+}
+
+function cleanTitle(filename){
+    return filename
+        .replace(/\.mp4$/i, "")
+        .replace(/_/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function videoRank(filename){
+    if(/roadmap/i.test(filename)){
+        return -2;
+    }
+
+    if(/GENAI for Beginners/i.test(filename)){
+        return 0;
+    }
+
+    const numberedVideo = filename.match(/\bVideo\s*[-_ ]*(\d+)\b/i);
+    if(numberedVideo){
+        return Number(numberedVideo[1]);
+    }
+
+    const simpleVideo = filename.match(/^video(\d+)\.mp4$/i);
+    if(simpleVideo){
+        return Number(simpleVideo[1]);
+    }
+
+    return 9999;
+}
+
+function sortVideos(first, second){
+    const firstRank = videoRank(first.name);
+    const secondRank = videoRank(second.name);
+
+    if(firstRank !== secondRank){
+        return firstRank - secondRank;
+    }
+
+    return titleSorter.compare(first.name, second.name);
+}
+
+function groupThumbnails(files){
+    return files
+        .filter(file => file.format === "Thumbnail" && file.original)
+        .reduce((groups, thumbnail) => {
+            if(!groups.has(thumbnail.original)){
+                groups.set(thumbnail.original, []);
+            }
+
+            groups.get(thumbnail.original).push(thumbnail);
+            return groups;
+        }, new Map());
+}
+
+function findThumbnail(videoName, thumbnailsByVideo, fallbackThumbnail){
+    const thumbnails = thumbnailsByVideo.get(videoName) || [];
+    thumbnails.sort((first, second) => titleSorter.compare(first.name, second.name));
+
+    const thumbnail = thumbnails.find(file => !/_000001\.jpg$/i.test(file.name)) || thumbnails[0] || fallbackThumbnail;
+    return thumbnail ? archiveUrl(thumbnail.name) : "";
+}
+
+function renderVideoCard(video){
     const card = document.createElement("div");
     card.className = "card";
 
-    const thumbnail = document.createElement("img");
-    thumbnail.className = "thumbnail";
-    thumbnail.src = archiveUrl(video.thumbnail);
-    thumbnail.alt = video.title;
-    thumbnail.onerror = () => {
+    if(video.thumbnail){
+        const thumbnail = document.createElement("img");
+        thumbnail.className = "thumbnail";
+        thumbnail.src = video.thumbnail;
+        thumbnail.alt = video.title;
+        thumbnail.onerror = () => {
+            const fallback = document.createElement("div");
+            fallback.className = "thumbnail";
+            fallback.textContent = video.title;
+            thumbnail.replaceWith(fallback);
+        };
+        card.appendChild(thumbnail);
+    } else {
         const fallback = document.createElement("div");
         fallback.className = "thumbnail";
         fallback.textContent = video.title;
-        thumbnail.replaceWith(fallback);
-    };
-    card.appendChild(thumbnail);
+        card.appendChild(fallback);
+    }
 
     const title = document.createElement("div");
     title.className = "title";
     title.textContent = video.title;
     card.appendChild(title);
 
-    card.onclick = () => playVideo(archiveUrl(video.file), archiveUrl(video.thumbnail));
+    card.onclick = () => playVideo(video.src, video.thumbnail);
 
     gallery.appendChild(card);
-});
+}
+
+async function loadVideos(){
+    try{
+        const response = await fetch(metadataUrl);
+
+        if(!response.ok){
+            throw new Error(`Internet Archive returned ${response.status}`);
+        }
+
+        const metadata = await response.json();
+        const files = metadata.files || [];
+        const videos = files.filter(isOriginalVideo).sort(sortVideos);
+        const thumbnailsByVideo = groupThumbnails(files);
+        const fallbackThumbnail = files.find(file => file.name === "__ia_thumb.jpg");
+
+        gallery.innerHTML = "";
+
+        if(videos.length === 0){
+            status.textContent = "No MP4 videos found.";
+            return;
+        }
+
+        videos.forEach(file => {
+            renderVideoCard({
+                title: cleanTitle(file.name),
+                src: archiveUrl(file.name),
+                thumbnail: findThumbnail(file.name, thumbnailsByVideo, fallbackThumbnail)
+            });
+        });
+
+        status.hidden = true;
+    } catch(error){
+        console.error(error);
+        status.textContent = "Could not load videos from Internet Archive.";
+    }
+}
 
 function playVideo(videoSrc, posterSrc){
     player.poster = posterSrc;
@@ -214,6 +295,8 @@ window.onclick = function(event){
         closeVideo();
     }
 }
+
+loadVideos();
 </script>
 
 </body>
